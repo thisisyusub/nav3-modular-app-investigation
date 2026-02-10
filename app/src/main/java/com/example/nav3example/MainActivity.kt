@@ -8,7 +8,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
-import com.example.nav3example.example1.navigation.NavigationExample1
+import com.example.nav3example.example1.navigation.NavigationRoot1
+import com.example.nav3example.example2.navigation.NavigationRoot2
 import com.example.nav3example.ui.theme.Nav3ExampleTheme
 
 class MainActivity : ComponentActivity() {
@@ -18,7 +19,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             Nav3ExampleTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    NavigationExample1(
+                    NavigationRoot2(
                         modifier = Modifier.padding(innerPadding),
                     )
                 }
