@@ -69,6 +69,9 @@ dependencies {
     /// material icons
     implementation(libs.androidx.material.icons.extended)
 
+    /// adaptive layouts
+    implementation(libs.androidx.material.adaptive)
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

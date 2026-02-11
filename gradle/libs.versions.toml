@@ -11,6 +11,7 @@ composeBom = "2026.01.01"
 nav3 = "1.0.0"
 kotlinSerialization = "1.10.0"
 kotlinCoroutines = "1.10.2"
+adaptive = "1.2.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -38,6 +39,9 @@ kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "kotlinCoroutines" }
 
 androidx-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
+
+androidx-material-adaptive = { group = "androidx.compose.material3.adaptive", name = "adaptive", version.ref = "adaptive"  }
+
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
