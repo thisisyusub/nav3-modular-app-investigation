@@ -32,7 +32,7 @@ class ListDetailScene<T : Any>(
 
     companion object {
         internal const val LIST_KEY = "ListDetailScene-list"
-        internal const val DETAIL_KEY = "ListDetailScene-list"
+        internal const val DETAIL_KEY = "ListDetailScene-detail"
 
         fun listPane() = mapOf(LIST_KEY to true)
         fun detailPane() = mapOf(DETAIL_KEY to true)

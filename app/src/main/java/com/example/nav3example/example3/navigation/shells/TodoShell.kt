@@ -10,6 +10,8 @@ import androidx.navigation3.ui.NavDisplay
 import com.example.nav3example.example1.screens.TodoDetailScreen
 import com.example.nav3example.example1.screens.TodoListScreen
 import com.example.nav3example.example3.navigation.AppRoute3
+import com.example.nav3example.example4.scenes.ListDetailScene
+import com.example.nav3example.example4.scenes.rememberListDetailSceneStrategy
 
 @Composable
 fun TodoShell(modifier: Modifier = Modifier) {
@@ -18,19 +20,36 @@ fun TodoShell(modifier: Modifier = Modifier) {
     NavDisplay(
         modifier = modifier,
         backStack = backStack,
+        sceneStrategy = rememberListDetailSceneStrategy(),
         entryDecorators = listOf(
             rememberSaveableStateHolderNavEntryDecorator(),
             rememberViewModelStoreNavEntryDecorator(),
         ),
+//        transitionSpec = {
+//            slideInHorizontally { it } togetherWith
+//                    slideOutHorizontally { -it }
+//        },
+//        popTransitionSpec = {
+//            slideInHorizontally { -it } togetherWith
+//                    slideOutHorizontally { it }
+//        },
+//        predictivePopTransitionSpec = {
+//            slideInHorizontally { -it } togetherWith
+//                    slideOutHorizontally { it }
+//        },
         entryProvider = entryProvider {
-            entry<AppRoute3.Todo.TodoList> {
+            entry<AppRoute3.Todo.TodoList>(
+                metadata = ListDetailScene.listPane(),
+            ) {
                 TodoListScreen(
                     onTodoClick = {
                         backStack.add(AppRoute3.Todo.TodoDetail(it))
                     }
                 )
             }
-            entry<AppRoute3.Todo.TodoDetail> {
+            entry<AppRoute3.Todo.TodoDetail>(
+                metadata = ListDetailScene.detailPane(),
+            ) {
                 TodoDetailScreen(todo = it.todo)
             }
         }

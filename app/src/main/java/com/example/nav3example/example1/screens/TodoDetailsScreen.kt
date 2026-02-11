@@ -1,11 +1,13 @@
 package com.example.nav3example.example1.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.nav3example.example1.viewmodels.TodoDetailViewModel
 
@@ -18,6 +20,7 @@ fun TodoDetailScreen(
     }
 ) {
     Column(
+        modifier = Modifier.background(color = Color.Cyan),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

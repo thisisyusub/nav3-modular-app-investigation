@@ -1,5 +1,8 @@
 package com.example.nav3example.example4.scenes
 
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.scene.Scene
 import androidx.navigation3.scene.SceneStrategy
@@ -29,5 +32,14 @@ class ListDetailSceneStrategy<T : Any>(
             key = listEntry.contentKey,
             previousEntries = entries.dropLast(1),
         )
+    }
+}
+
+@Composable
+fun <T : Any> rememberListDetailSceneStrategy(): ListDetailSceneStrategy<T> {
+    val windowSizeClass = currentWindowAdaptiveInfo().windowSizeClass
+
+    return remember(windowSizeClass) {
+        ListDetailSceneStrategy(windowSizeClass)
     }
 }
