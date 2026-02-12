@@ -1,8 +1,16 @@
 package com.example.nav3example.example3.navigation
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeContent
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -14,6 +22,7 @@ import androidx.navigation3.ui.NavDisplay
 import com.example.nav3example.example3.AppBottomNavigationBar
 import com.example.nav3example.example3.navigation.shells.TodoShell
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun NavigationRoot3(modifier: Modifier = Modifier) {
     val navigationState = rememberNavigationState(
@@ -34,8 +43,7 @@ fun NavigationRoot3(modifier: Modifier = Modifier) {
     ) { innerPadding ->
         NavDisplay(
             modifier = modifier
-                .fillMaxSize()
-                .padding(innerPadding),
+                .fillMaxSize(),
             onBack = navigator::goBack,
             entries = navigationState.toEntries(
                 entryProvider {

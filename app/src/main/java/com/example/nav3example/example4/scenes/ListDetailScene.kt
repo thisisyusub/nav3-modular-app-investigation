@@ -1,10 +1,12 @@
 package com.example.nav3example.example4.scenes
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.scene.Scene
 
@@ -20,6 +22,7 @@ class ListDetailScene<T : Any>(
     override val content: @Composable (() -> Unit) = {
         Row(
             modifier = Modifier.fillMaxSize()
+                .background(Color.Red)
         ) {
             Column(modifier = Modifier.weight(4f)) {
                 list.Content()
