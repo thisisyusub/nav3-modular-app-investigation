@@ -1,5 +1,10 @@
 package com.example.nav3example.example3.navigation.shells
 
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -21,14 +26,6 @@ import com.example.nav3example.example5.AppBottomSheetStrategy
 fun TodoShell(modifier: Modifier = Modifier) {
     val backStack = rememberNavBackStack(AppRoute3.Todo.TodoList)
 
-//    val bottomSheetStrategy = remember {
-//        AppBottomSheetStrategy<NavKey>(
-//            onDismiss = {
-//                backStack.removeLast()
-//            },
-//        )
-//    }
-
 
     NavDisplay(
         modifier = modifier,
@@ -38,29 +35,27 @@ fun TodoShell(modifier: Modifier = Modifier) {
             rememberSaveableStateHolderNavEntryDecorator(),
             rememberViewModelStoreNavEntryDecorator(),
         ),
-//        transitionSpec = {
-//            slideInHorizontally { it } togetherWith
-//                    slideOutHorizontally { -it }
-//        },
-//        popTransitionSpec = {
-//            slideInHorizontally { -it } togetherWith
-//                    slideOutHorizontally { it }
-//        },
-//        predictivePopTransitionSpec = {
-//            slideInHorizontally { -it } togetherWith
-//                    slideOutHorizontally { it }
-//        },
+        transitionSpec = {
+            slideInHorizontally { it } togetherWith
+                    slideOutHorizontally { -it }
+        },
+        popTransitionSpec = {
+            slideInHorizontally { -it } togetherWith
+                    slideOutHorizontally { it }
+        },
+        predictivePopTransitionSpec = {
+            slideInHorizontally { -it }.plus(fadeIn()) togetherWith
+                    fadeOut().plus(slideOutHorizontally { it })
+        },
         entryProvider = entryProvider {
-            entry<AppRoute3.Todo.TodoList>(
-                metadata = ListDetailScene.listPane(),
-            ) {
+            entry<AppRoute3.Todo.TodoList>{
                 TodoListScreen(
                     onTodoClick = {
                         backStack.add(AppRoute3.Todo.TodoDetail(it))
                     }
                 )
             }
-            entry<AppRoute3.Todo.TodoDetail> {
+            entry<AppRoute3.Todo.TodoDetail>{
                 TodoDetailScreen(todo = it.todo)
             }
         }

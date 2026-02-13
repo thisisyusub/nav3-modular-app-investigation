@@ -22,7 +22,6 @@ class ListDetailScene<T : Any>(
     override val content: @Composable (() -> Unit) = {
         Row(
             modifier = Modifier.fillMaxSize()
-                .background(Color.Red)
         ) {
             Column(modifier = Modifier.weight(4f)) {
                 list.Content()

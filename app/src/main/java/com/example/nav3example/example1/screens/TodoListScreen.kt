@@ -1,5 +1,6 @@
 package com.example.nav3example.example1.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -10,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -25,7 +27,8 @@ fun TodoListScreen(
     val todos by viewModel.uiState.collectAsStateWithLifecycle()
 
     LazyColumn(
-        modifier = modifier,
+        modifier = modifier
+            .background(Color.Red),
         contentPadding = PaddingValues(16.dp),
     ) {
         items(todos) { todo ->
