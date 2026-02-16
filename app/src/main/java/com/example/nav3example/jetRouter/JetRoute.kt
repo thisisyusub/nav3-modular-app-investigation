@@ -1,11 +1,5 @@
 package com.example.nav3example.jetRouter
 
-import androidx.compose.animation.AnimatedContentTransitionScope
-import androidx.compose.animation.ContentTransform
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
 
 // ============================================================================
@@ -25,7 +19,8 @@ sealed interface RouteBase {
  * @param redirect Optional per-route redirect logic
  * @param onExit Optional callback when leaving this route
  * @param transitionMetadata Per-route Nav3 transition metadata. Created using
- *        [routeTransition] helper. If null, global NavDisplay transitions apply.
+ *        NavDisplay.transitionSpec { }, NavDisplay.popTransitionSpec { }, etc.
+ *        If null, global NavDisplay transitions apply.
  * @param routes Nested child routes (sub-routes)
  */
 data class JetRoute(
@@ -38,11 +33,17 @@ data class JetRoute(
     override val routes: List<RouteBase> = emptyList(),
 ) : RouteBase
 
+/**
+ * A shell route that wraps child routes in a persistent UI shell (e.g., bottom nav bar).
+ */
 data class ShellRoute(
     val builder: @Composable (JetRouterState, @Composable () -> Unit) -> Unit,
     override val routes: List<RouteBase> = emptyList(),
 ) : RouteBase
 
+/**
+ * A stateful shell route that maintains separate navigation state per branch.
+ */
 data class StatefulShellRoute(
     val branches: List<ShellBranch>,
     val builder: @Composable (
@@ -59,72 +60,94 @@ data class ShellBranch(
 )
 
 // ============================================================================
-// Per-route transition helpers
+// ROUTE MODULES — Multi-module route splitting
 //
-// These produce metadata maps that Nav3's NavDisplay recognizes natively.
-// Usage in route definition:
+// Allows feature teams to define their routes independently and merge them
+// at the app level. This mirrors go_router's approach where route lists
+// can be composed from multiple sources.
 //
-//   JetRoute(
-//       path = "/modal",
-//       transitionMetadata = routeTransition(
-//           enter = { slideInVertically { it } togetherWith ExitTransition.KeepUntilTransitionsFinished },
-//           popExit = { EnterTransition.None togetherWith slideOutVertically { it } },
-//           predictivePop = { EnterTransition.None togetherWith slideOutVertically { it } },
+// Example usage:
+//
+//   // In :feature-users module
+//   val usersRoutes = routeModule {
+//       route("/users", name = "users", builder = { UsersScreen(it) }) {
+//           route(":id", name = "user-profile", builder = { UserProfileScreen(it) }) {
+//               route("edit", name = "user-edit", builder = { UserEditScreen(it) })
+//           }
+//       }
+//   }
+//
+//   // In :feature-settings module
+//   val settingsRoutes = routeModule {
+//       route("/settings", name = "settings", builder = { SettingsScreen() }) {
+//           route("notifications", builder = { NotificationsScreen() })
+//       }
+//   }
+//
+//   // In :app module — merge everything
+//   val router = rememberJetRouter(
+//       routes = listOf(
+//           JetRoute("/login", builder = { LoginScreen() }),
+//           ShellRoute(
+//               builder = { state, child -> AppShell(state, child) },
+//               routes = listOf(
+//                   JetRoute("/", name = "home", builder = { HomeScreen() }),
+//               ) + usersRoutes + settingsRoutes,
+//           ),
 //       ),
-//       builder = { ... },
 //   )
-//
-// Or use the presets:
-//
-//   JetRoute(path = "/page", transitionMetadata = slideHorizontalTransition(), ...)
-//   JetRoute(path = "/modal", transitionMetadata = slideUpTransition(), ...)
 // ============================================================================
 
-// These keys must match what NavDisplay looks for internally.
-// NavDisplay.transitionSpec, NavDisplay.popTransitionSpec, NavDisplay.predictivePopTransitionSpec
-// are helper functions that produce Map<String, Any> entries with these exact keys.
+/**
+ * DSL scope for building route modules.
+ */
+class RouteModuleScope {
+    internal val routes = mutableListOf<RouteBase>()
+
+    fun route(
+        path: String,
+        name: String? = null,
+        builder: (@Composable (JetRouterState) -> Unit)? = null,
+        redirect: (suspend (JetRouterState) -> String?)? = null,
+        transitionMetadata: Map<String, Any>? = null,
+        children: RouteModuleScope.() -> Unit = {},
+    ) {
+        val childScope = RouteModuleScope().apply(children)
+        routes.add(
+            JetRoute(
+                path = path,
+                name = name,
+                builder = builder,
+                redirect = redirect,
+                transitionMetadata = transitionMetadata,
+                routes = childScope.routes,
+            )
+        )
+    }
+
+    fun shell(
+        builder: @Composable (JetRouterState, @Composable () -> Unit) -> Unit,
+        children: RouteModuleScope.() -> Unit,
+    ) {
+        val childScope = RouteModuleScope().apply(children)
+        routes.add(
+            ShellRoute(
+                builder = builder,
+                routes = childScope.routes,
+            )
+        )
+    }
+
+    /** Include routes from another module */
+    fun include(moduleRoutes: List<RouteBase>) {
+        routes.addAll(moduleRoutes)
+    }
+}
 
 /**
- * Build a per-route transition metadata map.
- * Pass any combination of enter/popExit/predictivePop.
- * Null parameters inherit the global NavDisplay defaults.
+ * Build a list of routes using the DSL.
+ * Returns List<RouteBase> that can be used in JetRouter or combined with other modules.
  */
-/* NOTE: The actual metadata keys are created using NavDisplay.transitionSpec { },
-   NavDisplay.popTransitionSpec { }, and NavDisplay.predictivePopTransitionSpec { }
-   which return Map<String, Any>. We combine them with the + operator.
-
-   This helper just wraps them for convenience. See the preset functions below
-   for how to use them directly with NavDisplay's API.
-*/
-
-/**
- * Preset: horizontal slide (iOS-style push/pop).
- * Use NavDisplay's own helpers to ensure key compatibility.
- */
-/* Example usage — these are called in the route definition:
-
-   import androidx.navigation3.ui.NavDisplay
-
-   JetRoute(
-       path = "/details/:id",
-       transitionMetadata = NavDisplay.transitionSpec {
-           slideInHorizontally { it } togetherWith slideOutHorizontally { -it / 3 }
-       } + NavDisplay.popTransitionSpec {
-           slideInHorizontally { -it } togetherWith slideOutHorizontally { it }
-       } + NavDisplay.predictivePopTransitionSpec {
-           slideInHorizontally { -it } togetherWith slideOutHorizontally { it }
-       },
-       builder = { state -> DetailsScreen(state) },
-   )
-
-   // Or for a modal-style route:
-   JetRoute(
-       path = "/modal",
-       transitionMetadata = NavDisplay.transitionSpec {
-           slideInVertically { it } togetherWith ExitTransition.KeepUntilTransitionsFinished
-       } + NavDisplay.popTransitionSpec {
-           EnterTransition.None togetherWith slideOutVertically { it }
-       },
-       builder = { state -> ModalScreen(state) },
-   )
-*/
+fun routeModule(block: RouteModuleScope.() -> Unit): List<RouteBase> {
+    return RouteModuleScope().apply(block).routes
+}

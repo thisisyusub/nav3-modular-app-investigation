@@ -1,5 +1,13 @@
 package com.example.nav3example.jetRouter
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,121 +42,137 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.navigation3.ui.NavDisplay
 
-// ── Simulated Auth State ──────────────────────────────────────────────
+// ============================================================================
+// SIMULATED AUTH STATE
+// ============================================================================
 
 object AuthState {
-    var isLoggedIn by mutableStateOf(true) // toggle to test redirect
+    var isLoggedIn by mutableStateOf(true)
 }
 
-// ── Router Configuration ──────────────────────────────────────────────
+// ============================================================================
+// ROUTE MODULES — Each feature team defines their own routes
+//
+// In a real app, these would live in separate Gradle modules:
+//   :feature-users, :feature-settings, etc.
+// ============================================================================
+
+// ── :feature-users module ─────────────────────────────────────────────
+
+val usersRoutes = routeModule {
+    route("/users", name = "users", builder = { state -> UsersScreen(state) }) {
+        route(":id", name = "user-profile", builder = { state -> UserProfileScreen(state) }) {
+            route("edit", name = "user-edit", builder = { state -> UserEditScreen(state) })
+        }
+    }
+}
+
+// ── :feature-settings module ──────────────────────────────────────────
+
+val settingsRoutes = routeModule {
+    route("/settings", name = "settings", builder = { SettingsScreen() }) {
+        route(
+            path = "notifications",
+            name = "notifications",
+            builder = { NotificationsScreen() },
+            // Per-route modal transition: slides up/down
+            transitionMetadata = NavDisplay.transitionSpec {
+                slideInVertically { it } togetherWith
+                        ExitTransition.KeepUntilTransitionsFinished
+            } + NavDisplay.popTransitionSpec {
+                EnterTransition.None togetherWith slideOutVertically { it }
+            } + NavDisplay.predictivePopTransitionSpec {
+                EnterTransition.None togetherWith slideOutVertically { it }
+            },
+        )
+    }
+}
+
+// ============================================================================
+// APP — Merges all route modules together
+// ============================================================================
 
 @Composable
 fun ExampleApp() {
-    // *** FIX: Use rememberJetRouter instead of remember { JetRouter(...) }
-    // This saves the location stack via rememberSaveable so it survives rotation.
     val router = rememberJetRouter(
         routes = listOf(
-            // ┌─────────────────────────────────────────────────┐
-            // │  Login Route (outside the shell)                │
-            // └─────────────────────────────────────────────────┘
+            // Login — outside the shell
             JetRoute(
                 path = "/login",
                 name = "login",
-                builder = { state -> LoginScreen() },
+                builder = { LoginScreen() },
             ),
 
-            // ┌─────────────────────────────────────────────────┐
-            // │  Shell Route — persistent bottom nav bar        │
-            // └─────────────────────────────────────────────────┘
+            // Shell with bottom nav — merge feature modules here
             ShellRoute(
-                builder = { state, child ->
-                    AppShell(state = state, content = child)
-                },
+                builder = { state, child -> AppShell(state, child) },
                 routes = listOf(
-                    // ── Home Tab ──────────────────────────────
-                    JetRoute(
-                        path = "/",
-                        name = "home",
-                        builder = { state -> HomeScreen() },
-                    ),
-
-                    // ── Users Tab with sub-routes ────────────
-                    JetRoute(
-                        path = "/users",
-                        name = "users",
-                        builder = { state -> UsersScreen(state) },
-                        routes = listOf(
-                            JetRoute(
-                                path = ":id",
-                                name = "user-profile",
-                                builder = { state -> UserProfileScreen(state) },
-                                routes = listOf(
-                                    JetRoute(
-                                        path = "edit",
-                                        name = "user-edit",
-                                        builder = { state -> UserEditScreen(state) },
-                                    ),
-                                ),
-                            ),
-                        ),
-                    ),
-
-                    // ── Settings Tab ─────────────────────────
-                    JetRoute(
-                        path = "/settings",
-                        name = "settings",
-                        builder = { state -> SettingsScreen() },
-                        routes = listOf(
-                            JetRoute(
-                                path = "notifications",
-                                name = "notifications",
-                                builder = { state -> NotificationsScreen() },
-                            ),
-                        ),
-                    ),
-                ),
+                    JetRoute("/", name = "home", builder = { HomeScreen() }),
+                ) + usersRoutes + settingsRoutes,  // ← merged from feature modules
             ),
         ),
         initialLocation = "/",
-
-        // ── Global Redirect (Auth Guard) ──────────────────
         redirect = { state ->
             val isLoggingIn = state.matchedLocation == "/login"
-            if (!AuthState.isLoggedIn && !isLoggingIn) {
-                "/login"
-            } else if (AuthState.isLoggedIn && isLoggingIn) {
-                "/"
-            } else {
-                null
-            }
+            if (!AuthState.isLoggedIn && !isLoggingIn) "/login"
+            else if (AuthState.isLoggedIn && isLoggingIn) "/"
+            else null
         },
+        errorBuilder = { state -> ErrorScreen(state) },
 
-        // ── Error Page ────────────────────────────────────
-        errorBuilder = { state ->
-            ErrorScreen(state)
-        },
+        // ── Navigation Logger ─────────────────────────────────────
+        // Logs all navigation events. Use LogcatNavigationLogger for
+        // debug builds, or implement NavigationLogger for analytics.
+        navigationLogger = LogcatNavigationLogger(tag = "MyApp"),
 
         debugLogDiagnostics = true,
     )
 
-    JetRouterDisplay(router = router)
+    JetRouterDisplay(
+        router = router,
+
+        // ── Entry Decorators for ViewModel + SavedState ───────────
+        // These enable:
+        //   - viewModel() calls inside route builders are scoped to
+        //     that specific route (cleared when popped)
+        //   - rememberSaveable state is preserved per route entry
+        //
+        // Requires:
+        //   implementation("androidx.lifecycle:lifecycle-viewmodel-navigation3:...")
+        //   implementation("androidx.navigation3:navigation3-ui:...")
+        entryDecorators = listOf(
+            // rememberSavedStateNavEntryDecorator(),    // Uncomment when dependency is added
+            // rememberViewModelStoreNavEntryDecorator(), // Uncomment when dependency is added
+        ),
+
+        // ── Global Transitions ────────────────────────────────────
+        // Applied to all routes by default. Per-route overrides via
+        // JetRoute.transitionMetadata take precedence.
+        transitionSpec = {
+            slideInHorizontally(tween(300)) { it } togetherWith
+                    slideOutHorizontally(tween(300)) { -it / 3 }
+        },
+        popTransitionSpec = {
+            slideInHorizontally(tween(300)) { -it } togetherWith
+                    slideOutHorizontally(tween(300)) { it }
+        },
+        predictivePopTransitionSpec = {
+            slideInHorizontally(tween(300)) { -it } togetherWith
+                    slideOutHorizontally(tween(300)) { it }
+        },
+    )
 }
 
 // ============================================================================
-// SHELL — Persistent UI wrapper
+// SHELL
 // ============================================================================
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppShell(
-    state: JetRouterState,
-    content: @Composable () -> Unit,
-) {
+fun AppShell(state: JetRouterState, content: @Composable () -> Unit) {
     val nav = rememberGoRouterNav()
-
-    // Use the FULL path from router state to determine active tab.
-    // This works for both top-level (/users) and nested (/users/42/edit).
     val currentPath = state.fullPath
 
     val selectedIndex = when {
@@ -193,9 +217,7 @@ fun AppShell(
             }
         },
     ) { padding ->
-        Box(modifier = Modifier.padding(padding)) {
-            content()
-        }
+        Box(modifier = Modifier.padding(padding)) { content() }
     }
 }
 
@@ -207,16 +229,13 @@ fun AppShell(
 fun LoginScreen() {
     val nav = rememberGoRouterNav()
     Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
+        Modifier.fillMaxSize(),
+        Arrangement.Center,
+        Alignment.CenterHorizontally,
     ) {
         Text("Login Screen", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(16.dp))
-        Button(onClick = {
-            AuthState.isLoggedIn = true
-            nav.go("/")
-        }) {
+        Button(onClick = { AuthState.isLoggedIn = true; nav.go("/") }) {
             Text("Log In")
         }
     }
@@ -226,33 +245,20 @@ fun LoginScreen() {
 fun HomeScreen() {
     val nav = rememberGoRouterNav()
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
+        Modifier.fillMaxSize().padding(16.dp),
+        Arrangement.Center,
+        Alignment.CenterHorizontally,
     ) {
         Text("Home Screen", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(16.dp))
-
-        Button(onClick = { nav.go("/users") }) {
-            Text("Go to Users (go)")
-        }
+        Button(onClick = { nav.go("/users") }) { Text("Go to Users (go)") }
         Spacer(Modifier.height(8.dp))
-
-        Button(onClick = { nav.push("/users/42") }) {
-            Text("Push User #42 (push)")
-        }
+        Button(onClick = { nav.push("/users/42") }) { Text("Push User #42 (push)") }
         Spacer(Modifier.height(8.dp))
-
         Button(onClick = {
-            nav.goNamed(
-                name = "user-profile",
-                pathParameters = mapOf("id" to "99"),
-            )
-        }) {
-            Text("Go to User #99 (named)")
-        }
+            nav.goNamed("user-profile", pathParameters = mapOf("id" to "99"))
+        }) { Text("Go to User #99 (named)") }
         Spacer(Modifier.height(8.dp))
-
         Button(onClick = { nav.go("/users?sort=name&limit=10") }) {
             Text("Users sorted by name")
         }
@@ -264,7 +270,6 @@ fun UsersScreen(state: JetRouterState) {
     val nav = rememberGoRouterNav()
     val sort = state.queryParam("sort")
     val limit = state.queryParam("limit")?.toIntOrNull() ?: 20
-
     val users = remember(sort) {
         val list = (1..50).map { "User #$it" }
         if (sort == "name") list.sorted() else list
@@ -281,9 +286,7 @@ fun UsersScreen(state: JetRouterState) {
                 val id = user.removePrefix("User #")
                 ListItem(
                     headlineContent = { Text(user) },
-                    modifier = Modifier.clickable {
-                        nav.push("/users/$id")
-                    },
+                    modifier = Modifier.clickable { nav.push("/users/$id") },
                 )
             }
         }
@@ -294,36 +297,19 @@ fun UsersScreen(state: JetRouterState) {
 fun UserProfileScreen(state: JetRouterState) {
     val nav = rememberGoRouterNav()
     val userId = state.pathParam("id")
-
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
+        Modifier.fillMaxSize().padding(16.dp),
+        Arrangement.Center,
+        Alignment.CenterHorizontally,
     ) {
-        Text(
-            "User Profile: #$userId",
-            style = MaterialTheme.typography.headlineMedium,
-        )
+        Text("User Profile: #$userId", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(8.dp))
         Text("Path: ${state.fullPath}")
         Text("All params: ${state.pathParameters}")
         Spacer(Modifier.height(16.dp))
-
-        Button(onClick = { nav.push("/users/$userId/edit") }) {
-            Text("Edit User")
-        }
+        Button(onClick = { nav.push("/users/$userId/edit") }) { Text("Edit User") }
         Spacer(Modifier.height(8.dp))
-
-        Button(onClick = {
-            nav.push("/users/$userId", extra = mapOf("from" to "profile"))
-        }) {
-            Text("Refresh with extra data")
-        }
-        Spacer(Modifier.height(8.dp))
-
-        Button(onClick = { nav.pop() }) {
-            Text("Go Back (pop)")
-        }
+        Button(onClick = { nav.pop() }) { Text("Go Back (pop)") }
     }
 }
 
@@ -331,47 +317,34 @@ fun UserProfileScreen(state: JetRouterState) {
 fun UserEditScreen(state: JetRouterState) {
     val nav = rememberGoRouterNav()
     val userId = state.pathParam("id")
-
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
+        Modifier.fillMaxSize().padding(16.dp),
+        Arrangement.Center,
+        Alignment.CenterHorizontally,
     ) {
-        Text(
-            "Edit User #$userId",
-            style = MaterialTheme.typography.headlineMedium,
-        )
+        Text("Edit User #$userId", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(8.dp))
         Text("Full path: ${state.fullPath}")
         Spacer(Modifier.height(16.dp))
-
-        Button(onClick = { nav.pop() }) {
-            Text("Save & Back")
-        }
+        Button(onClick = { nav.pop() }) { Text("Save & Back") }
     }
 }
 
 @Composable
 fun SettingsScreen() {
     val nav = rememberGoRouterNav()
-
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
+        Modifier.fillMaxSize().padding(16.dp),
+        Arrangement.Center,
+        Alignment.CenterHorizontally,
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(16.dp))
-
         Button(onClick = { nav.push("/settings/notifications") }) {
             Text("Notification Settings")
         }
         Spacer(Modifier.height(16.dp))
-
-        Button(onClick = {
-            AuthState.isLoggedIn = false
-            nav.go("/login")
-        }) {
+        Button(onClick = { AuthState.isLoggedIn = false; nav.go("/login") }) {
             Text("Log Out")
         }
     }
@@ -381,15 +354,14 @@ fun SettingsScreen() {
 fun NotificationsScreen() {
     val nav = rememberGoRouterNav()
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
+        Modifier.fillMaxSize().padding(16.dp),
+        Arrangement.Center,
+        Alignment.CenterHorizontally,
     ) {
         Text("Notifications", style = MaterialTheme.typography.headlineMedium)
+        Text("(slides up — per-route transition)", style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(16.dp))
-        Button(onClick = { nav.pop() }) {
-            Text("Back to Settings")
-        }
+        Button(onClick = { nav.pop() }) { Text("Back to Settings") }
     }
 }
 
@@ -397,9 +369,9 @@ fun NotificationsScreen() {
 fun ErrorScreen(state: JetRouterState) {
     val nav = rememberGoRouterNav()
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
+        Modifier.fillMaxSize().padding(16.dp),
+        Arrangement.Center,
+        Alignment.CenterHorizontally,
     ) {
         Text("404 — Page Not Found", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(8.dp))
@@ -409,8 +381,6 @@ fun ErrorScreen(state: JetRouterState) {
             Text(it, color = MaterialTheme.colorScheme.error)
         }
         Spacer(Modifier.height(16.dp))
-        Button(onClick = { nav.go("/") }) {
-            Text("Go Home")
-        }
+        Button(onClick = { nav.go("/") }) { Text("Go Home") }
     }
 }

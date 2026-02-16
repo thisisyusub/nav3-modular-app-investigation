@@ -19,6 +19,7 @@ class JetRouter(
     val errorBuilder: (@Composable (JetRouterState) -> Unit)? = null,
     val debugLogDiagnostics: Boolean = false,
     val onException: ((JetRouterState, JetRouter) -> Unit)? = null,
+    val navigationLogger: NavigationLogger? = null,
 ) {
     internal val matcher = RouteMatcher(routes)
     internal val namedRouteResolver = NamedRouteResolver(routes)
@@ -34,34 +35,13 @@ class JetRouter(
     val currentState: JetRouterState
         get() = currentMatch?.toState() ?: JetRouterState()
 
+    val currentLocation: String?
+        get() = locationStack.lastOrNull()?.location
+
     // ── go() — Declarative navigation ─────────────────────────────────
 
-    /**
-     * Navigate to a location declaratively.
-     *
-     * When both current and target are in the same shell:
-     *   - Finds the top-level JetRoute (direct child of the shell) that the
-     *     current leaf belongs to — this is the "current tab root".
-     *   - Pops all entries that descend from that same tab root.
-     *   - Keeps the tab root entry itself so back returns to it.
-     *   - Pushes the new destination.
-     *
-     * Example:
-     *   Start:              ["/"]
-     *   go("/users"):       ["/", "/users"]
-     *   push("/users/42"):  ["/", "/users", "/users/42"]
-     *   go("/settings"):    ["/", "/users", "/settings"]
-     *     ↑ popped /users/42 (deep push under /users tab)
-     *     ↑ kept /users (tab root)
-     *     ↑ pushed /settings
-     *   push("/settings/notifications"): ["/", "/users", "/settings", "/settings/notifications"]
-     *   Back (pop):         ["/", "/users", "/settings"]
-     *   Back (pop):         ["/", "/users"]
-     *   Back (pop):         ["/"]
-     *
-     * When target is outside any shell (e.g. /login): replaces entire stack.
-     */
     suspend fun go(location: String, extra: Any? = null) {
+        val previousLocation = currentLocation
         val matchList = resolveWithRedirects(location, extra, forceAnimationOff = true)
         if (matchList.isError) {
             handleError(matchList)
@@ -76,57 +56,45 @@ class JetRouter(
         val sameShell = targetShell != null && targetShell === currentShell
 
         if (sameShell && backStack.size > 0) {
-            // Find the top-level tab route (direct child of shell) that the
-            // CURRENT leaf belongs to.
             val currentTabRoot = currentLeaf?.let {
                 findTabRoot(currentShell!!, it)
             }
 
             if (currentTabRoot != null) {
-                // Pop all entries whose leaf descends from the same tab root,
-                // EXCEPT the tab root entry itself.
                 while (backStack.size > 1) {
                     val topLeaf = backStack.last().lastMatch?.route ?: break
                     val topTabRoot = findTabRoot(currentShell!!, topLeaf)
 
                     if (topTabRoot === currentTabRoot) {
-                        // This entry is in the same tab branch
-                        // Check if this IS the tab root entry itself
                         val topIsTabRoot = isDirectTabRoute(currentShell, topLeaf)
                         if (topIsTabRoot) {
-                            // This is the tab root — keep it, stop popping
                             break
                         } else {
-                            // This is a deep push within the tab — pop it
                             backStack.removeLast()
                             locationStack.removeLast()
                         }
                     } else {
-                        // Different tab or outside shell — stop
                         break
                     }
                 }
             }
 
-            // Push the new destination
             backStack.add(matchList)
             locationStack.add(LocationEntry(location, extra))
         } else {
-            // Outside shell or first entry — replace entire stack
             backStack.clear()
             locationStack.clear()
             backStack.add(matchList)
             locationStack.add(LocationEntry(location, extra))
         }
 
-        if (debugLogDiagnostics) {
-            log("go($location) -> stack: ${locationStack.map { it.location }}")
-        }
+        logEvent(NavigationType.GO, location, previousLocation)
     }
 
     // ── push() — Imperative navigation ────────────────────────────────
 
     suspend fun push(location: String, extra: Any? = null) {
+        val previousLocation = currentLocation
         val matchList = resolveWithRedirects(location, extra)
         if (matchList.isError) {
             handleError(matchList)
@@ -135,14 +103,13 @@ class JetRouter(
         backStack.add(matchList)
         locationStack.add(LocationEntry(location, extra))
 
-        if (debugLogDiagnostics) {
-            log("push($location) -> stack size: ${backStack.size}")
-        }
+        logEvent(NavigationType.PUSH, location, previousLocation)
     }
 
     // ── pushReplacement() ─────────────────────────────────────────────
 
     suspend fun pushReplacement(location: String, extra: Any? = null) {
+        val previousLocation = currentLocation
         val matchList = resolveWithRedirects(location, extra, forceAnimationOff = true)
         if (matchList.isError) {
             handleError(matchList)
@@ -155,21 +122,18 @@ class JetRouter(
         backStack.add(matchList)
         locationStack.add(LocationEntry(location, extra))
 
-        if (debugLogDiagnostics) {
-            log("pushReplacement($location)")
-        }
+        logEvent(NavigationType.PUSH_REPLACEMENT, location, previousLocation)
     }
 
     // ── pop() ─────────────────────────────────────────────────────────
 
     fun pop(): Boolean {
         if (backStack.size <= 1) return false
+        val poppedLocation = currentLocation
         backStack.removeLast()
         locationStack.removeLast()
 
-        if (debugLogDiagnostics) {
-            log("pop() -> stack: ${locationStack.map { it.location }}")
-        }
+        logEvent(NavigationType.POP, currentLocation ?: "/", poppedLocation)
         return true
     }
 
@@ -214,9 +178,7 @@ class JetRouter(
                 backStack.add(resolved)
             }
         }
-        if (debugLogDiagnostics) {
-            log("restored ${backStack.size} entries: ${locationStack.map { it.location }}")
-        }
+        logEvent(NavigationType.RESTORE, currentLocation ?: initialLocation, null)
     }
 
     internal fun getLocationStrings(): List<String> =
@@ -224,9 +186,6 @@ class JetRouter(
 
     // ── Shell & tab lookup helpers ────────────────────────────────────
 
-    /**
-     * Find which ShellRoute directly owns a given JetRoute.
-     */
     private fun findOwnerShell(
         searchRoutes: List<RouteBase>,
         target: JetRoute,
@@ -234,15 +193,11 @@ class JetRouter(
         for (route in searchRoutes) {
             when (route) {
                 is ShellRoute -> {
-                    if (containsJetRoute(route.routes, target)) {
-                        return route
-                    }
+                    if (containsJetRoute(route.routes, target)) return route
                 }
-
                 is JetRoute -> {
                     findOwnerShell(route.routes, target)?.let { return it }
                 }
-
                 is StatefulShellRoute -> {
                     for (branch in route.branches) {
                         findOwnerShell(branch.routes, target)?.let { return it }
@@ -253,15 +208,6 @@ class JetRouter(
         return null
     }
 
-    /**
-     * Given a ShellRoute and a leaf JetRoute that's somewhere inside it,
-     * find the top-level JetRoute (direct child of the shell) that the
-     * leaf descends from. This is the "tab root".
-     *
-     * For example, if shell has children ["/", "/users", "/settings"]
-     * and leaf is the "edit" route under /users/:id/edit,
-     * this returns the "/users" JetRoute.
-     */
     private fun findTabRoot(shell: ShellRoute, leaf: JetRoute): JetRoute? {
         for (route in shell.routes) {
             if (route is JetRoute) {
@@ -273,15 +219,9 @@ class JetRouter(
         return null
     }
 
-    /**
-     * Check if [leaf] is a direct top-level tab route of the shell
-     * (i.e., a direct child JetRoute of the shell, not a sub-route).
-     */
     private fun isDirectTabRoute(shell: ShellRoute, leaf: JetRoute): Boolean {
         for (route in shell.routes) {
-            if (route is JetRoute && route === leaf) {
-                return true
-            }
+            if (route is JetRoute && route === leaf) return true
         }
         return false
     }
@@ -293,11 +233,9 @@ class JetRouter(
                     if (route === target) return true
                     if (containsJetRoute(route.routes, target)) return true
                 }
-
                 is ShellRoute -> {
                     if (containsJetRoute(route.routes, target)) return true
                 }
-
                 is StatefulShellRoute -> {
                     for (branch in route.branches) {
                         if (containsJetRoute(branch.routes, target)) return true
@@ -320,11 +258,18 @@ class JetRouter(
             isTransitionEnabled = !forceAnimationOff,
         )
 
-        return runRedirectPipeline(
+        val resolved = runRedirectPipeline(
             topLevelRedirect = redirect,
             matcher = matcher,
             initialMatchList = initialMatch,
         )
+
+        // Log redirect if the resolved location differs from the original
+        if (resolved.uri.toString() != initialMatch.uri.toString() && !resolved.isError) {
+            logEvent(NavigationType.REDIRECT, resolved.uri.toString(), location)
+        }
+
+        return resolved
     }
 
     private fun handleError(matchList: RouteMatchList) {
@@ -335,13 +280,28 @@ class JetRouter(
             backStack.add(matchList)
             locationStack.add(LocationEntry(matchList.uri.toString(), null))
         }
-        if (debugLogDiagnostics) {
-            log("ERROR: ${matchList.error?.message}")
-        }
+        logEvent(NavigationType.ERROR, matchList.uri.toString(), null)
     }
 
-    private fun log(message: String) {
-        println("[JetRouter] $message")
+    private fun logEvent(
+        type: NavigationType,
+        location: String,
+        previousLocation: String?,
+    ) {
+        val event = NavigationLogEvent(
+            type = type,
+            location = location,
+            previousLocation = previousLocation,
+            stackDepth = backStack.size,
+        )
+
+        // Always log to stdout when debugLogDiagnostics is on
+        if (debugLogDiagnostics) {
+            println("[JetRouter] $event | stack: ${locationStack.map { it.location }}")
+        }
+
+        // Call the developer's custom logger
+        navigationLogger?.onNavigate(event)
     }
 }
 
@@ -362,6 +322,7 @@ fun rememberJetRouter(
     errorBuilder: (@Composable (JetRouterState) -> Unit)? = null,
     debugLogDiagnostics: Boolean = false,
     onException: ((JetRouterState, JetRouter) -> Unit)? = null,
+    navigationLogger: NavigationLogger? = null,
 ): JetRouter {
     val savedLocations = rememberSaveable(
         saver = listSaver(
@@ -380,6 +341,7 @@ fun rememberJetRouter(
             errorBuilder = errorBuilder,
             debugLogDiagnostics = debugLogDiagnostics,
             onException = onException,
+            navigationLogger = navigationLogger,
         )
     }
 
